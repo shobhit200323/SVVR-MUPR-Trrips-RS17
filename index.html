@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DMRC Duty Wise Roster Search Tool</title>
+    <title>DMRC Duty & Train Loop Pattern Tool</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -19,7 +19,7 @@
         .header h2 { margin: 0; font-size: 16px; }
         .container { background: white; padding: 15px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         .top-bar {
-            display: flex; gap: 20px; margin-bottom: 15px; align-items: center;
+            display: flex; gap: 15px; margin-bottom: 15px; align-items: center;
             background: #eef2f7; padding: 12px 15px; border-radius: 6px; flex-wrap: wrap;
             justify-content: space-between;
         }
@@ -35,15 +35,16 @@
         .search-panel {
             display: flex; gap: 20px; margin-bottom: 15px; align-items: center;
             background: #eef2f7; padding: 12px 15px; border-radius: 6px; flex-wrap: wrap;
+            justify-content: space-between;
         }
-        .search-group { display: flex; align-items: center; gap: 12px; }
-        input[type="text"], input[type="number"], input[type="email"], input[type="password"] {
+        .search-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        input[type="text"], input[type="number"], input[type="password"] {
             padding: 7px 12px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px;
             outline: none; font-weight: bold;
         }
         input[type="text"] { width: 160px; }
         input[type="number"] { width: 80px; }
-        input[type="email"], input[type="password"] { width: 150px; font-weight: normal; }
+        input[type="password"] { width: 130px; font-weight: normal; }
         button {
             padding: 7px 16px; font-size: 12px; font-weight: bold; color: white;
             background-color: #005a9c; border: none; border-radius: 4px; cursor: pointer;
@@ -53,6 +54,8 @@
         .btn-reset:hover { background-color: #5a6268; }
         .btn-logout { background-color: #ef4444; }
         .btn-logout:hover { background-color: #b91c1c; }
+        .btn-download { background-color: #28a745; }
+        .btn-download:hover { background-color: #218838; }
         .status-line { font-size: 11px; color: #64748b; margin-top: 4px; }
         .error-line { font-size: 11px; color: #ef4444; margin-top: 4px; font-weight: bold; }
         .admin-chip {
@@ -73,6 +76,8 @@
         table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
         th, td { border: 1px solid #cbd5e1; padding: 7px 8px; text-align: center; }
         th { background-color: #003366; color: white; position: sticky; top: 0; font-weight: 600; z-index: 10; }
+        
+        /* Duty View Styles */
         .trip-group-1 { background-color: #ffffff !important; }
         .trip-group-2 { background-color: #e0f2fe !important; }
         .trip-group-3 { background-color: #fef3c7 !important; }
@@ -89,13 +94,22 @@
         .note-text { font-size: 9.5px; color: #b45309; font-weight: normal; }
         .no-note { color: #94a3b8; }
         .roster-missing { color: #ef4444; font-weight: bold; font-size: 10px; }
+
+        /* Loop Pattern (Trip Chart) Styles */
+        .group-header-dn { background-color: #005a9c; color: white; font-weight: bold; font-size: 12px; }
+        .group-header-up { background-color: #003366; color: white; font-weight: bold; font-size: 12px; }
+        .sub-header { background-color: #e2e8f0; color: #003366; font-weight: bold; position: sticky; top: 24px; }
+        .sep-col { background-color: #cbd5e1; width: 8px; padding: 0; border: none; }
+        .next-duty { background-color: #e0f2fe; color: #0369a1; font-weight: bold; }
+        .break-cell { background-color: #ffc7ce !important; color: #9c0006 !important; font-weight: bold; }
+
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <h2>DMRC Duty Wise Roster Search</h2>
+        <h2 id="appTitle">DMRC Duty Wise Roster Search</h2>
         <span id="roleChip" class="viewer-chip">Checking...</span>
     </div>
 
@@ -103,7 +117,12 @@
 
         <div class="top-bar">
             <div class="day-select-group">
-                <label><b>Day Type:</b></label>
+                <label><b>View Mode:</b></label>
+                <select id="viewModeSelect" onchange="onViewModeChange()">
+                    <option value="duty">Duty Wise Roster</option>
+                    <option value="loop">Train Loop Pattern (Trip Chart)</option>
+                </select>
+                <label style="margin-left: 10px;"><b>Day Type:</b></label>
                 <select id="dayTypeSelect" onchange="onDayTypeChange()">
                     <option value="WD">Weekday (WD)</option>
                     <option value="SAT">Saturday (SAT)</option>
@@ -114,14 +133,14 @@
             </div>
 
             <div class="auth-group" id="loginForm">
-                <input type="text" id="loginEmail" placeholder="Employment No." />
+                <input type="text" id="loginEmp" placeholder="Employment No." />
                 <input type="password" id="loginPassword" placeholder="Password" />
                 <button onclick="doLogin()">Login</button>
                 <span class="error-line" id="loginError"></span>
             </div>
 
             <div class="auth-group hidden" id="logoutForm">
-                <span id="loggedInAs"></span>
+                <span id="loggedInAs" style="font-weight: bold; color: #1e293b;"></span>
                 <button class="btn-logout" onclick="doLogout()">Logout</button>
             </div>
         </div>
@@ -140,12 +159,12 @@
         </div>
 
         <div class="search-panel">
-            <div class="search-group">
-                <div>
+            <div class="search-group" id="searchControlGroup">
+                <div id="dutySearchBox">
                     <label><b>Enter Duty No:</b></label><br>
                     <input type="text" id="dutyInput" placeholder="e.g. 11, 12, 13" onkeyup="filterByInput()" />
                 </div>
-                <div>
+                <div id="thresholdBox">
                     <label><b>Long Break Threshold (min):</b></label><br>
                     <input type="number" id="breakThreshold" value="25" min="1" onchange="filterByInput()" />
                 </div>
@@ -153,10 +172,14 @@
                     <button class="btn-reset" onclick="resetFilter()">Clear</button>
                 </div>
             </div>
+            <div id="exportActionBox" class="hidden" style="margin-top: 15px;">
+                <button class="btn-download" onclick="downloadExactExcel()">Download Loop Pattern Excel (.xlsx)</button>
+            </div>
             <div class="status-line" id="dataStatus">Loading data…</div>
         </div>
 
-        <div class="cards-grid">
+        <!-- Cards Grid for Duty Mode -->
+        <div class="cards-grid" id="dutyCards">
             <div class="card" style="border-left-color: #0284c7;">
                 <div class="card-title">DUTY NUMBER</div>
                 <div class="card-value" id="cDuty" style="color: #0284c7;">-</div>
@@ -193,14 +216,14 @@
 
         <div class="table-box">
             <table id="rosterTable">
-                <thead>
+                <thead id="tableHead">
                     <tr>
                         <th>SPELL NO</th><th>RAKE NO</th><th>START STN</th><th>START TIME</th>
                         <th>END STN</th><th>END TIME</th><th>DURATION (MIN)</th><th>NOTE</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td colspan="8" style="padding: 20px; color: #64748b; font-weight: bold;">Please enter a duty number to view its roster details.</td></tr>
+                    <tr><td colspan="8" style="padding: 20px; color: #64748b; font-weight: bold;">Please select view mode and enter query to view details.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -213,12 +236,16 @@
         const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         // ==============================
 
+        // ⚠️ अपनी मुख्य एडमिन आईडी यहाँ सेट करें (जो फाइल अपलोड कर सकेगी)
+        const MAIN_ADMIN_EMP = "12345";
+
         let allData = [];
         let rosterMap = {};
         let rakeMap = {};
         let currentDutyQuery = '';
         let currentDayType = 'WD';
-        let isAdmin = false;
+        let currentViewMode = 'duty'; // 'duty' or 'loop'
+        let isMainAdmin = false;
 
         function parseMins(tStr) {
             if (!tStr) return 0;
@@ -236,23 +263,32 @@
             Object.keys(rakeMap).forEach(k => rakeMap[k].sort((a, b) => a.StartMins - b.StartMins));
         }
 
-        // ---------- AUTH ----------
+        // ---------- AUTH & PERMISSIONS ----------
         async function refreshAuthUI() {
             const { data: { session } } = await supa.auth.getSession();
-            isAdmin = !!session;
             const chip = document.getElementById('roleChip');
             const loginForm = document.getElementById('loginForm');
             const logoutForm = document.getElementById('logoutForm');
             const uploadPanel = document.getElementById('uploadPanel');
 
-            if (isAdmin) {
-                chip.innerText = 'Admin';
-                chip.className = 'admin-chip';
+            if (session) {
+                const userEmail = session.user.email || '';
+                const empNo = userEmail.split('@')[0];
+                isMainAdmin = (empNo === MAIN_ADMIN_EMP || userEmail === `${MAIN_ADMIN_EMP}@dmrc.local`);
+
+                chip.innerText = isMainAdmin ? 'Main Admin' : 'Staff / Viewer';
+                chip.className = isMainAdmin ? 'admin-chip' : 'viewer-chip';
                 loginForm.classList.add('hidden');
                 logoutForm.classList.remove('hidden');
-                document.getElementById('loggedInAs').innerText = session.user.email;
-                uploadPanel.classList.remove('hidden');
+                document.getElementById('loggedInAs').innerText = `ID: ${empNo}`;
+
+                if (isMainAdmin) {
+                    uploadPanel.classList.remove('hidden');
+                } else {
+                    uploadPanel.classList.add('hidden');
+                }
             } else {
+                isMainAdmin = false;
                 chip.innerText = 'Viewer';
                 chip.className = 'viewer-chip';
                 loginForm.classList.remove('hidden');
@@ -262,25 +298,63 @@
         }
 
         async function doLogin() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    document.getElementById('loginError').innerText = '';
-    const { error } = await supa.auth.signInWithPassword({ email, password });
-    if (error) {
-        document.getElementById('loginError').innerText = error.message;
-    } else {
-        await refreshAuthUI();
-    }
-}
+            let empInput = document.getElementById('loginEmp').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            document.getElementById('loginError').innerText = '';
+
+            if (!empInput) {
+                document.getElementById('loginError').innerText = 'Enter Employment No.';
+                return;
+            }
+
+            const email = empInput.includes('@') ? empInput : `${empInput}@dmrc.local`;
+            const { error } = await supa.auth.signInWithPassword({ email, password });
+            if (error) {
+                document.getElementById('loginError').innerText = "Invalid ID or Password";
+            } else {
+                await refreshAuthUI();
+            }
+        }
 
         async function doLogout() {
             await supa.auth.signOut();
             await refreshAuthUI();
         }
 
-        supa.auth.onAuthStateChange((_event, _session) => { refreshAuthUI(); });
+        supa.auth.onAuthStateChange(() => { refreshAuthUI(); });
 
-        // ---------- DAY TYPE / DATA LOADING ----------
+        // ---------- VIEW MODE SWITCHING ----------
+        function onViewModeChange() {
+            currentViewMode = document.getElementById('viewModeSelect').value;
+            const appTitle = document.getElementById('appTitle');
+            const dutyCards = document.getElementById('dutyCards');
+            const dutySearchBox = document.getElementById('dutySearchBox');
+            const thresholdBox = document.getElementById('thresholdBox');
+            const exportActionBox = document.getElementById('exportActionBox');
+
+            document.getElementById('dutyInput').value = '';
+            currentDutyQuery = '';
+
+            if (currentViewMode === 'duty') {
+                appTitle.innerText = 'DMRC Duty Wise Roster Search';
+                dutyCards.classList.remove('hidden');
+                dutySearchBox.classList.remove('hidden');
+                thresholdBox.classList.remove('hidden');
+                exportActionBox.classList.add('hidden');
+                renderDutyHeader();
+                clearDisplay();
+            } else {
+                appTitle.innerText = 'DMRC Train Loop Pattern (Trip Chart)';
+                dutyCards.classList.add('hidden');
+                dutySearchBox.classList.add('hidden');
+                thresholdBox.classList.add('hidden');
+                exportActionBox.classList.remove('hidden');
+                renderLoopHeader();
+                renderLoopPatternTable();
+            }
+        }
+
+        // ---------- DAY TYPE & DATA LOADING ----------
         async function onDayTypeChange() {
             currentDayType = document.getElementById('dayTypeSelect').value;
             document.getElementById('uploadDayLabel1').innerText = currentDayType;
@@ -324,16 +398,21 @@
                 });
 
                 document.getElementById('dataStatus').innerText =
-                    `${dayType}: ${allData.length} trip rows, ${Object.keys(rosterMap).length} roster records (live from Supabase).`;
+                    `${dayType}: ${allData.length} trip rows, ${Object.keys(rosterMap).length} roster records loaded.`;
 
-                if (currentDutyQuery) applyFilter(currentDutyQuery);
+                if (currentViewMode === 'duty') {
+                    if (currentDutyQuery) filterDutyView(currentDutyQuery);
+                } else {
+                    renderLoopPatternTable();
+                }
             } catch (err) {
                 document.getElementById('dataStatus').innerText = 'Error loading data: ' + err.message;
             }
         }
 
-        // ---------- ADMIN UPLOAD ----------
-        document.getElementById('loopFileInput').addEventListener('change', function (e) {
+        // ---------- FILE UPLOADS (Main Admin Only) ----------
+        document.getElementById('loopFileInput')?.addEventListener('change', function (e) {
+            if (!isMainAdmin) return;
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -360,17 +439,14 @@
                         .filter(r => r.duty !== '');
 
                     document.getElementById('loopStatus').innerText = 'Saving to Supabase…';
-                    const { error: delErr } = await supa.from('loop_trips').delete().eq('day_type', currentDayType);
-                    if (delErr) throw delErr;
+                    await supa.from('loop_trips').delete().eq('day_type', currentDayType);
 
                     const BATCH = 500;
                     for (let i = 0; i < parsed.length; i += BATCH) {
-                        const chunk = parsed.slice(i, i + BATCH);
-                        const { error: insErr } = await supa.from('loop_trips').insert(chunk);
-                        if (insErr) throw insErr;
+                        await supa.from('loop_trips').insert(parsed.slice(i, i + BATCH));
                     }
 
-                    document.getElementById('loopStatus').innerText = `Saved: ${parsed.length} trip rows for ${currentDayType} (visible to everyone now).`;
+                    document.getElementById('loopStatus').innerText = `Saved: ${parsed.length} trip rows for ${currentDayType}.`;
                     await loadDayData(currentDayType);
                 } catch (err) {
                     document.getElementById('loopStatus').innerText = 'Save failed: ' + err.message;
@@ -379,7 +455,8 @@
             reader.readAsArrayBuffer(file);
         });
 
-        document.getElementById('rosterFileInput').addEventListener('change', function (e) {
+        document.getElementById('rosterFileInput')?.addEventListener('change', function (e) {
+            if (!isMainAdmin) return;
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -404,17 +481,14 @@
                         .filter(r => r.duty_no !== '');
 
                     document.getElementById('rosterStatus').innerText = 'Saving to Supabase…';
-                    const { error: delErr } = await supa.from('roster_summary').delete().eq('day_type', currentDayType);
-                    if (delErr) throw delErr;
+                    await supa.from('roster_summary').delete().eq('day_type', currentDayType);
 
                     const BATCH = 500;
                     for (let i = 0; i < parsed.length; i += BATCH) {
-                        const chunk = parsed.slice(i, i + BATCH);
-                        const { error: insErr } = await supa.from('roster_summary').insert(chunk);
-                        if (insErr) throw insErr;
+                        await supa.from('roster_summary').insert(parsed.slice(i, i + BATCH));
                     }
 
-                    document.getElementById('rosterStatus').innerText = `Saved: ${parsed.length} roster records for ${currentDayType} (visible to everyone now).`;
+                    document.getElementById('rosterStatus').innerText = `Saved: ${parsed.length} roster records for ${currentDayType}.`;
                     await loadDayData(currentDayType);
                 } catch (err) {
                     document.getElementById('rosterStatus').innerText = 'Save failed: ' + err.message;
@@ -423,17 +497,23 @@
             reader.readAsArrayBuffer(file);
         });
 
-        // ---------- SEARCH (same proven logic as before) ----------
+        // ---------- FILTER ROUTING ----------
         function filterByInput() {
-            let val = document.getElementById('dutyInput').value.trim();
-            currentDutyQuery = val;
-            applyFilter(val);
+            if (currentViewMode === 'duty') {
+                let val = document.getElementById('dutyInput').value.trim();
+                currentDutyQuery = val;
+                filterDutyView(val);
+            }
         }
 
         function resetFilter() {
             document.getElementById('dutyInput').value = '';
             currentDutyQuery = '';
-            clearDisplay();
+            if (currentViewMode === 'duty') {
+                clearDisplay();
+            } else {
+                renderLoopPatternTable();
+            }
         }
 
         function clearDisplay() {
@@ -449,7 +529,18 @@
             tbody.innerHTML = '<tr><td colspan="8" style="padding: 20px; color: #64748b; font-weight: bold;">Please enter a duty number to view its roster details.</td></tr>';
         }
 
-        function applyFilter(dutyQuery) {
+        // ---------- 1. DUTY WISE LOGIC ----------
+        function renderDutyHeader() {
+            const head = document.getElementById('tableHead');
+            head.innerHTML = `
+                <tr>
+                    <th>SPELL NO</th><th>RAKE NO</th><th>START STN</th><th>START TIME</th>
+                    <th>END STN</th><th>END TIME</th><th>DURATION (MIN)</th><th>NOTE</th>
+                </tr>
+            `;
+        }
+
+        function filterDutyView(dutyQuery) {
             if (!dutyQuery) { clearDisplay(); return; }
             if (!allData.length) { return; }
 
@@ -525,7 +616,7 @@
                 }
             });
 
-            renderTable(rows);
+            renderDutyTable(rows);
 
             document.getElementById('cDuty').innerText = `Duty ${dutyQuery}`;
             if (rosterRec) {
@@ -544,7 +635,7 @@
             document.getElementById('cBreakTotal').innerText = totalBreak + ' Mins';
         }
 
-        function renderTable(rows) {
+        function renderDutyTable(rows) {
             const tbody = document.querySelector('#rosterTable tbody');
             tbody.innerHTML = '';
             const colorClasses = ['trip-group-1', 'trip-group-2', 'trip-group-3', 'trip-group-4', 'trip-group-5'];
@@ -588,6 +679,130 @@
                 `;
                 tbody.appendChild(tr);
             });
+        }
+
+        // ---------- 2. TRAIN LOOP PATTERN (TRIP CHART) LOGIC ----------
+        function renderLoopHeader() {
+            const head = document.getElementById('tableHead');
+            head.innerHTML = `
+                <tr>
+                    <th colspan="5" class="group-header-dn">DOWN LINE (MUPR TO SVVR)</th>
+                    <th class="sep-col"></th>
+                    <th colspan="6" class="group-header-up">UP LINE (SVVR TO MUPR)</th>
+                </tr>
+                <tr class="sub-header">
+                    <th>TRAIN NO</th>
+                    <th>MUPR</th>
+                    <th>Duty No.</th>
+                    <th>SVVR</th>
+                    <th>Duty No.</th>
+                    <th class="sep-col"></th>
+                    <th>TRAIN NO</th>
+                    <th>SVVR</th>
+                    <th>Duty No.</th>
+                    <th>MUPR</th>
+                    <th>Duty No.</th>
+                    <th class="next-duty">Next Duty NO.</th>
+                </tr>
+            `;
+        }
+
+        function renderLoopPatternTable() {
+            const tbody = document.querySelector('#rosterTable tbody');
+            if (!allData.length) {
+                tbody.innerHTML = '<tr><td colspan="12" style="padding: 20px; color: #64748b; font-weight: bold;">No data loaded for loop pattern.</td></tr>';
+                return;
+            }
+
+            let upTrips = allData.filter(r => r.StartStn.toUpperCase().includes('SVVR') && r.EndStn.toUpperCase().includes('MUPR'));
+            let downTrips = allData.filter(r => r.StartStn.toUpperCase().includes('MUPR') && r.EndStn.toUpperCase().includes('SVVR'));
+
+            upTrips.forEach(up => {
+                let match = downTrips.find(d => d.Rake === up.Rake && d.StartMins >= up.EndMins - 5);
+                up.NextDuty = match ? match.Duty : '';
+                up.IsBreak = (up.NextDuty !== '' && up.Duty !== up.NextDuty);
+            });
+
+            let nUp = upTrips.length;
+            let highlightFlags = new Array(nUp).fill(false);
+            let inBlock = false, startIdx = 0;
+
+            for (let i = 0; i < nUp; i++) {
+                if (upTrips[i].IsBreak) {
+                    if (!inBlock) { inBlock = true; startIdx = i; }
+                } else {
+                    if (inBlock) {
+                        inBlock = false;
+                        let endIdx = i - 1;
+                        if ((endIdx - startIdx + 1) >= 3) {
+                            for (let r = startIdx; r <= Math.min(startIdx + 2, endIdx); r++) highlightFlags[r] = true;
+                            for (let r = Math.max(startIdx, endIdx - 2); r <= endIdx; r++) highlightFlags[r] = true;
+                        }
+                    }
+                }
+            }
+            if (inBlock) {
+                let endIdx = nUp - 1;
+                if ((endIdx - startIdx + 1) >= 3) {
+                    for (let r = startIdx; r <= Math.min(startIdx + 2, endIdx); r++) highlightFlags[r] = true;
+                    for (let r = Math.max(startIdx, endIdx - 2); r <= endIdx; r++) highlightFlags[r] = true;
+                }
+            }
+
+            for (let i = 0; i < nUp; i++) upTrips[i].Highlight = highlightFlags[i];
+
+            let maxLen = Math.max(upTrips.length, downTrips.length);
+            let displayList = [];
+
+            for (let i = 0; i < maxLen; i++) {
+                let dn = downTrips[i] || null;
+                let up = upTrips[i] || null;
+
+                displayList.push({
+                    'DN_TRAIN_NO': dn ? dn.Rake : '',
+                    'DN_MUPR': dn ? dn.StartTime : '',
+                    'DN_Duty_MUPR': dn ? dn.Duty : '',
+                    'DN_SVVR': dn ? dn.EndTime : '',
+                    'DN_Duty_SVVR': dn ? dn.Duty : '',
+
+                    'UP_TRAIN_NO': up ? up.Rake : '',
+                    'UP_SVVR': up ? up.StartTime : '',
+                    'UP_Duty_SVVR': up ? up.Duty : '',
+                    'UP_MUPR': up ? up.EndTime : '',
+                    'UP_Duty_MUPR': up ? up.Duty : '',
+                    'UP_Next_Duty': up ? up.NextDuty : '',
+                    'Highlight': up ? up.Highlight : false
+                });
+            }
+
+            tbody.innerHTML = '';
+            displayList.forEach(r => {
+                const tr = document.createElement('tr');
+                const dutyM = r.Highlight ? 'break-cell' : '';
+                const nextM = r.Highlight ? 'break-cell' : 'next-duty';
+
+                tr.innerHTML = `
+                    <td><b>${r.DN_TRAIN_NO}</b></td>
+                    <td>${r.DN_MUPR}</td>
+                    <td>${r.DN_Duty_MUPR}</td>
+                    <td>${r.DN_SVVR}</td>
+                    <td>${r.DN_Duty_SVVR}</td>
+                    <td class="sep-col"></td>
+                    <td><b>${r.UP_TRAIN_NO}</b></td>
+                    <td>${r.UP_SVVR}</td>
+                    <td>${r.UP_Duty_SVVR}</td>
+                    <td>${r.UP_MUPR}</td>
+                    <td class="${dutyM}">${r.UP_Duty_MUPR}</td>
+                    <td class="${nextM}">${r.UP_Next_Duty}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function downloadExactExcel() {
+            const table = document.getElementById('rosterTable');
+            const wb = XLSX.utils.table_to_book(table, {sheet: "DOWN_LEFT_UP_RIGHT"});
+            XLSX.writeFile(wb, `TrainLoop_Pattern_${currentDayType}.xlsx`);
         }
 
         // ---------- INIT ----------
